@@ -1,7 +1,7 @@
 [
-  { "title": "Bonjour", "file": "bonjour.mp3" },
-  { "title": "Dialogue 01", "file": "Lecon 01.mp3" }
-  { "title": "Dialogue 02", "file": "Lecon 02.mp3" }
-  { "title": "Dialogue 03", "file": "Lecon 03.mp3" }
-  { "title": "Dialogue 04", "file": "Lecon 04.mp3" }
+  { "title": "Leçon 01", "file": "Lecon 01.MP3" },
+  { "title": "Leçon 02", "file": "Lecon 02.MP3" },
+  { "title": "Leçon 03", "file": "Lecon 03.MP3" },
+  { "title": "Leçon 04", "file": "Lecon 04.MP3" },
+  { "title": "Leçon 05", "file": "Lecon 05.MP3" }
 ]
