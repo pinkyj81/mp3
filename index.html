@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>French MP3 Player</title>
+  <style>
+    :root { --gap: 12px; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans KR", Arial, sans-serif;
+           margin: 0; background: #f7f7f8; color: #111; }
+    header { padding: 18px 16px; background: #fff; border-bottom: 1px solid #e6e6e6; position: sticky; top: 0; }
+    h1 { font-size: 18px; margin: 0 0 8px; }
+    .row { display: flex; gap: var(--gap); flex-wrap: wrap; align-items: center; }
+    input[type="search"] { flex: 1 1 240px; padding: 10px 12px; border: 1px solid #d8d8d8; border-radius: 10px; }
+    select, button { padding: 10px 12px; border: 1px solid #d8d8d8; border-radius: 10px; background: #fff; }
+    main { max-width: 900px; margin: 0 auto; padding: 16px; }
+    .card { background: #fff; border: 1px solid #e6e6e6; border-radius: 14px; padding: 14px; margin-bottom: 12px; }
+    .title { font-weight: 650; margin-bottom: 10px; }
+    audio { width: 100%; }
+    .meta { font-size: 12px; color: #555; margin-top: 8px; display: flex; justify-content: space-between; gap: var(--gap); flex-wrap: wrap; }
+    .pill { display:inline-block; padding: 2px 8px; border: 1px solid #e0e0e0; border-radius: 999px; background: #fafafa; }
+    .muted { color: #666; font-size: 13px; }
+    .error { color: #b00020; background: #fff; border: 1px solid #f0c2c2; padding: 12px; border-radius: 12px; }
+    .footer { text-align: center; padding: 18px 0 24px; color: #666; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>French MP3 Player</h1>
+    <div class="row">
+      <input id="q" type="search" placeholder="검색 (제목)" />
+      <select id="rate" title="재생 속도">
+        <option value="0.75">0.75x</option>
+        <option value="0.9">0.9x</option>
+        <option value="1" selected>1.0x</option>
+        <option value="1.1">1.1x</option>
+        <option value="1.25">1.25x</option>
+        <option value="1.5">1.5x</option>
+      </select>
+      <button id="stopAll" type="button">전체 정지</button>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <span class="muted">파일은 <b>audio/</b> 폴더에 넣고, 목록은 <b>audio/index.json</b>만 수정하면 됩니다.</span>
+    </div>
+  </header>
+
+  <main>
+    <div id="status" class="muted" style="margin: 6px 2px 14px;"></div>
+    <div id="list"></div>
+    <div class="footer">오프라인에서도 쓰려면 파일을 휴대폰에 저장하거나, 간단 호스팅에 올려서 접속하세요.</div>
+  </main>
+
+  <script>
+    const INDEX_URL = "audio/index.json";
+    const listEl = document.getElementById("list");
+    const statusEl = document.getElementById("status");
+    const qEl = document.getElementById("q");
+    const rateEl = document.getElementById("rate");
+    const stopAllBtn = document.getElementById("stopAll");
+
+    let items = [];
+    let audios = [];
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, m => ({
+        "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
+      }[m]));
+    }
+
+    function stopAll() {
+      audios.forEach(a => { a.pause(); a.currentTime = 0; });
+    }
+
+    function applyRateToAll() {
+      const r = parseFloat(rateEl.value);
+      audios.forEach(a => { a.playbackRate = r; });
+    }
+
+    function render() {
+      const q = qEl.value.trim().toLowerCase();
+      const filtered = items.filter(it => (it.title || "").toLowerCase().includes(q));
+
+      statusEl.textContent = `총 ${items.length}개 · 표시 ${filtered.length}개`;
+
+      listEl.innerHTML = filtered.map((it, idx) => {
+        const title = escapeHtml(it.title || `Track ${idx+1}`);
+        const file = encodeURI(it.file || "");
+        const src = `audio/${file}`;
+        return `
+          <div class="card">
+            <div class="title">${title}</div>
+            <audio controls preload="none" data-idx="${idx}">
+              <source src="${src}" type="audio/mpeg">
+              브라우저가 오디오를 지원하지 않습니다.
+            </audio>
+            <div class="meta">
+              <span class="pill">${escapeHtml(it.file || "")}</span>
+              <span class="muted">속도는 상단에서 변경</span>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      // 새로 그린 audio들을 다시 수집
+      audios = Array.from(document.querySelectorAll("audio"));
+      applyRateToAll();
+
+      // 동시에 여러 개 재생되는 걸 막고 싶으면(선택): 하나 재생하면 나머지 정지
+      audios.forEach(a => {
+        a.addEventListener("play", () => {
+          audios.forEach(other => { if (other !== a) other.pause(); });
+        });
+      });
+    }
+
+    async function loadIndex() {
+      try {
+        statusEl.textContent = "목록 불러오는 중...";
+        const res = await fetch(INDEX_URL, { cache: "no-store" });
+        if (!res.ok) throw new Error(`index.json을 불러올 수 없습니다 (HTTP ${res.status})`);
+        const data = await res.json();
+        if (!Array.isArray(data)) throw new Error("index.json 형식이 배열(JSON list)이어야 합니다.");
+        items = data.filter(x => x && x.file);
+        render();
+      } catch (err) {
+        listEl.innerHTML = `
+          <div class="error">
+            <div style="font-weight:700; margin-bottom:6px;">오류</div>
+            <div>${escapeHtml(err.message)}</div>
+            <div style="margin-top:10px;" class="muted">
+              확인: <b>audio/index.json</b> 파일 존재 여부, JSON 문법(쉼표/따옴표), 그리고 MP3 파일명이 정확한지
+            </div>
+          </div>
+        `;
+        statusEl.textContent = "";
+      }
+    }
+
+    qEl.addEventListener("input", render);
+    rateEl.addEventListener("change", applyRateToAll);
+    stopAllBtn.addEventListener("click", stopAll);
+
+    loadIndex();
+  </script>
+</body>
+</html>
