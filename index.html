@@ -37,6 +37,7 @@
         <option value="1.25">1.25x</option>
         <option value="1.5">1.5x</option>
       </select>
+      <button id="playAll" type="button">전체 재생</button>
       <button id="stopAll" type="button">전체 정지</button>
     </div>
     <div class="row" style="margin-top:10px">
@@ -56,10 +57,13 @@
     const statusEl = document.getElementById("status");
     const qEl = document.getElementById("q");
     const rateEl = document.getElementById("rate");
+    const playAllBtn = document.getElementById("playAll");
     const stopAllBtn = document.getElementById("stopAll");
 
     let items = [];
     let audios = [];
+    let playAllMode = false;
+    let playAllIndex = 0;
 
     function escapeHtml(s) {
       return String(s).replace(/[&<>"']/g, m => ({
@@ -68,7 +72,28 @@
     }
 
     function stopAll() {
+      playAllMode = false;
       audios.forEach(a => { a.pause(); a.currentTime = 0; });
+    }
+
+    async function playAllSequential() {
+      if (!audios.length) return;
+
+      // 전체 재생에서는 트랙 반복(loop)을 끄고 순차 재생한다.
+      playAllMode = true;
+      playAllIndex = 0;
+      audios.forEach(a => {
+        a.loop = false;
+      });
+
+      stopAll();
+      playAllMode = true;
+
+      try {
+        await audios[0].play();
+      } catch (err) {
+        playAllMode = false;
+      }
     }
 
     function applyRateToAll() {
@@ -110,6 +135,30 @@
         a.addEventListener("play", () => {
           audios.forEach(other => { if (other !== a) other.pause(); });
         });
+
+        a.addEventListener("ended", async () => {
+          if (!playAllMode) {
+            // 단일 재생 모드에서는 반복 재생 유지
+            a.loop = true;
+            return;
+          }
+
+          playAllIndex += 1;
+          if (playAllIndex >= audios.length) {
+            playAllMode = false;
+            // 전체 재생이 끝나면 원래 반복 재생 옵션 복원
+            audios.forEach(x => {
+              x.loop = true;
+            });
+            return;
+          }
+
+          try {
+            await audios[playAllIndex].play();
+          } catch (err) {
+            playAllMode = false;
+          }
+        });
       });
     }
 
@@ -138,6 +187,7 @@
 
     qEl.addEventListener("input", render);
     rateEl.addEventListener("change", applyRateToAll);
+    playAllBtn.addEventListener("click", playAllSequential);
     stopAllBtn.addEventListener("click", stopAll);
 
     loadIndex();
