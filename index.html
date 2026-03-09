@@ -71,10 +71,13 @@
 
     let items = [];
     let audios = [];
+    const queuePlayer = new Audio();
     let selectedFiles = new Set();
     let playAllMode = false;
     let playQueue = [];
     let playQueueIndex = 0;
+
+    queuePlayer.preload = "auto";
 
     function escapeHtml(s) {
       return String(s).replace(/[&<>"']/g, m => ({
@@ -87,6 +90,8 @@
       playQueue = [];
       playQueueIndex = 0;
       audios.forEach(a => { a.pause(); a.currentTime = 0; });
+      queuePlayer.pause();
+      queuePlayer.currentTime = 0;
       // 일반 모드에서는 각 트랙 반복 재생 유지
       audios.forEach(a => { a.loop = true; });
     }
@@ -105,9 +110,12 @@
 
       // 기존 재생 정지 후 큐 첫 곡 재생
       audios.forEach(a => { a.pause(); a.currentTime = 0; });
+      queuePlayer.pause();
+      queuePlayer.currentTime = 0;
+      queuePlayer.src = playQueue[0];
 
       try {
-        await playQueue[0].play();
+        await queuePlayer.play();
       } catch (err) {
         playAllMode = false;
       }
@@ -115,7 +123,7 @@
 
     async function playAllSequential() {
       if (!audios.length) return;
-      await startQueuePlayback(audios.slice());
+      await startQueuePlayback(audios.map(a => a.dataset.src));
     }
 
     async function playSelectedSequential() {
@@ -123,7 +131,7 @@
       const checkedFiles = new Set(
         Array.from(document.querySelectorAll(".track-check:checked")).map(chk => chk.dataset.file)
       );
-      const selectedQueue = audios.filter(a => checkedFiles.has(a.dataset.file));
+      const selectedQueue = audios.filter(a => checkedFiles.has(a.dataset.file)).map(a => a.dataset.src);
       if (!selectedQueue.length) {
         alert("재생할 레슨을 체크해주세요.");
         return;
@@ -134,6 +142,7 @@
     function applyRateToAll() {
       const r = parseFloat(rateEl.value);
       audios.forEach(a => { a.playbackRate = r; });
+      queuePlayer.playbackRate = r;
     }
 
     function render() {
@@ -157,7 +166,7 @@
               </label>
               <div class="title" style="margin-bottom:0;">${title}</div>
             </div>
-            <audio controls preload="none" loop data-idx="${idx}" data-file="${rawFile}">
+            <audio controls preload="none" loop data-idx="${idx}" data-file="${rawFile}" data-src="${src}">
               <source src="${src}" type="audio/mpeg">
               브라우저가 오디오를 지원하지 않습니다.
             </audio>
@@ -185,30 +194,31 @@
       // 동시에 여러 개 재생되는 걸 막고 싶으면(선택): 하나 재생하면 나머지 정지
       audios.forEach(a => {
         a.addEventListener("play", () => {
+          // 카드 개별 재생을 시작하면 큐 재생은 중지
+          playAllMode = false;
+          queuePlayer.pause();
+          queuePlayer.currentTime = 0;
           audios.forEach(other => { if (other !== a) other.pause(); });
-        });
-
-        a.addEventListener("ended", async () => {
-          if (!playAllMode) {
-            // 단일 재생 모드에서는 반복 재생 유지
-            a.loop = true;
-            return;
-          }
-
-          playQueueIndex += 1;
-          if (playQueueIndex >= playQueue.length) {
-            // 체크된 재생목록 안에서 계속 반복
-            playQueueIndex = 0;
-          }
-
-          try {
-            await playQueue[playQueueIndex].play();
-          } catch (err) {
-            playAllMode = false;
-          }
         });
       });
     }
+
+    queuePlayer.addEventListener("ended", async () => {
+      if (!playAllMode || !playQueue.length) return;
+
+      playQueueIndex += 1;
+      if (playQueueIndex >= playQueue.length) {
+        // 선택된 재생목록 안에서 계속 반복
+        playQueueIndex = 0;
+      }
+
+      try {
+        queuePlayer.src = playQueue[playQueueIndex];
+        await queuePlayer.play();
+      } catch (err) {
+        playAllMode = false;
+      }
+    });
 
     async function loadIndex() {
       try {
