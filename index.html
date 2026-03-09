@@ -42,7 +42,7 @@
         <option value="1.5">1.5x</option>
       </select>
       <button id="playAll" type="button">전체 재생</button>
-      <button id="stopAll" type="button">전체 정지</button>
+      <button id="playSelected" type="button">선택 재생</button>
     </div>
     <div class="row" style="margin-top:10px">
       <span class="muted">파일은 <b>audio/</b> 폴더에 넣고, 목록은 <b>audio/index.json</b>만 수정하면 됩니다.</span>
@@ -62,7 +62,7 @@
     const qEl = document.getElementById("q");
     const rateEl = document.getElementById("rate");
     const playAllBtn = document.getElementById("playAll");
-    const stopAllBtn = document.getElementById("stopAll");
+    const playSelectedBtn = document.getElementById("playSelected");
 
     let items = [];
     let audios = [];
@@ -86,34 +86,44 @@
       audios.forEach(a => { a.loop = true; });
     }
 
-    async function playAllSequential() {
-      if (!audios.length) return;
+    async function startQueuePlayback(queue) {
+      if (!queue.length) return;
 
-      const checkedFiles = new Set(
-        Array.from(document.querySelectorAll(".track-check:checked")).map(chk => chk.dataset.file)
-      );
-      playQueue = audios.filter(a => checkedFiles.has(a.dataset.file));
-      if (!playQueue.length) {
-        alert("재생할 레슨을 체크해주세요.");
-        return;
-      }
-
-      // 전체 재생에서는 트랙 반복(loop)을 끄고 순차 재생한다.
+      playQueue = queue;
       playAllMode = true;
       playQueueIndex = 0;
+
+      // 큐 재생 중에는 개별 loop를 꺼서 ended 이벤트로 다음 곡 진행
       audios.forEach(a => {
         a.loop = false;
       });
 
-      // 기존 재생만 정지하고 큐는 유지한다.
+      // 기존 재생 정지 후 큐 첫 곡 재생
       audios.forEach(a => { a.pause(); a.currentTime = 0; });
-      playAllMode = true;
 
       try {
         await playQueue[0].play();
       } catch (err) {
         playAllMode = false;
       }
+    }
+
+    async function playAllSequential() {
+      if (!audios.length) return;
+      await startQueuePlayback(audios.slice());
+    }
+
+    async function playSelectedSequential() {
+      if (!audios.length) return;
+      const checkedFiles = new Set(
+        Array.from(document.querySelectorAll(".track-check:checked")).map(chk => chk.dataset.file)
+      );
+      const selectedQueue = audios.filter(a => checkedFiles.has(a.dataset.file));
+      if (!selectedQueue.length) {
+        alert("재생할 레슨을 체크해주세요.");
+        return;
+      }
+      await startQueuePlayback(selectedQueue);
     }
 
     function applyRateToAll() {
@@ -221,7 +231,7 @@
     qEl.addEventListener("input", render);
     rateEl.addEventListener("change", applyRateToAll);
     playAllBtn.addEventListener("click", playAllSequential);
-    stopAllBtn.addEventListener("click", stopAll);
+    playSelectedBtn.addEventListener("click", playSelectedSequential);
 
     loadIndex();
   </script>
