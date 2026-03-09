@@ -15,6 +15,8 @@
     select, button { padding: 10px 12px; border: 1px solid #d8d8d8; border-radius: 10px; background: #fff; }
     main { max-width: 900px; margin: 0 auto; padding: 16px; }
     .card { background: #fff; border: 1px solid #e6e6e6; border-radius: 14px; padding: 14px; margin-bottom: 12px; }
+    .track-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+    .track-check { width: 16px; height: 16px; }
     .title { font-weight: 650; margin-bottom: 10px; }
     audio { width: 100%; }
     .meta { font-size: 12px; color: #555; margin-top: 8px; display: flex; justify-content: space-between; gap: var(--gap); flex-wrap: wrap; }
@@ -62,8 +64,10 @@
 
     let items = [];
     let audios = [];
+    let selectedFiles = new Set();
     let playAllMode = false;
-    let playAllIndex = 0;
+    let playQueue = [];
+    let playQueueIndex = 0;
 
     function escapeHtml(s) {
       return String(s).replace(/[&<>"']/g, m => ({
@@ -73,24 +77,38 @@
 
     function stopAll() {
       playAllMode = false;
+      playQueue = [];
+      playQueueIndex = 0;
       audios.forEach(a => { a.pause(); a.currentTime = 0; });
+      // 일반 모드에서는 각 트랙 반복 재생 유지
+      audios.forEach(a => { a.loop = true; });
     }
 
     async function playAllSequential() {
       if (!audios.length) return;
 
+      const checkedFiles = new Set(
+        Array.from(document.querySelectorAll(".track-check:checked")).map(chk => chk.dataset.file)
+      );
+      playQueue = audios.filter(a => checkedFiles.has(a.dataset.file));
+      if (!playQueue.length) {
+        alert("재생할 레슨을 체크해주세요.");
+        return;
+      }
+
       // 전체 재생에서는 트랙 반복(loop)을 끄고 순차 재생한다.
       playAllMode = true;
-      playAllIndex = 0;
+      playQueueIndex = 0;
       audios.forEach(a => {
         a.loop = false;
       });
 
-      stopAll();
+      // 기존 재생만 정지하고 큐는 유지한다.
+      audios.forEach(a => { a.pause(); a.currentTime = 0; });
       playAllMode = true;
 
       try {
-        await audios[0].play();
+        await playQueue[0].play();
       } catch (err) {
         playAllMode = false;
       }
@@ -110,11 +128,16 @@
       listEl.innerHTML = filtered.map((it, idx) => {
         const title = escapeHtml(it.title || `Track ${idx+1}`);
         const file = encodeURI(it.file || "");
+        const rawFile = escapeHtml(it.file || "");
         const src = `audio/${file}`;
+        const checked = selectedFiles.has(it.file || "") ? "checked" : "";
         return `
           <div class="card">
-            <div class="title">${title}</div>
-            <audio controls preload="none" loop data-idx="${idx}">
+            <div class="track-head">
+              <input class="track-check" type="checkbox" data-file="${rawFile}" ${checked}>
+              <div class="title" style="margin-bottom:0;">${title}</div>
+            </div>
+            <audio controls preload="none" loop data-idx="${idx}" data-file="${rawFile}">
               <source src="${src}" type="audio/mpeg">
               브라우저가 오디오를 지원하지 않습니다.
             </audio>
@@ -130,6 +153,15 @@
       audios = Array.from(document.querySelectorAll("audio"));
       applyRateToAll();
 
+      // 체크 상태를 상태 저장소와 동기화
+      document.querySelectorAll(".track-check").forEach(chk => {
+        chk.addEventListener("change", () => {
+          const f = chk.dataset.file;
+          if (chk.checked) selectedFiles.add(f);
+          else selectedFiles.delete(f);
+        });
+      });
+
       // 동시에 여러 개 재생되는 걸 막고 싶으면(선택): 하나 재생하면 나머지 정지
       audios.forEach(a => {
         a.addEventListener("play", () => {
@@ -143,18 +175,14 @@
             return;
           }
 
-          playAllIndex += 1;
-          if (playAllIndex >= audios.length) {
-            playAllMode = false;
-            // 전체 재생이 끝나면 원래 반복 재생 옵션 복원
-            audios.forEach(x => {
-              x.loop = true;
-            });
-            return;
+          playQueueIndex += 1;
+          if (playQueueIndex >= playQueue.length) {
+            // 체크된 재생목록 안에서 계속 반복
+            playQueueIndex = 0;
           }
 
           try {
-            await audios[playAllIndex].play();
+            await playQueue[playQueueIndex].play();
           } catch (err) {
             playAllMode = false;
           }
