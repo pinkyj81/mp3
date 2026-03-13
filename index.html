@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>French MP3 Player</title>
+  <title>Language MP3 Player</title>
   <style>
     :root { --gap: 12px; }
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans KR", Arial, sans-serif;
@@ -35,8 +35,12 @@
 </head>
 <body>
   <header>
-    <h1>French MP3 Player</h1>
+    <h1 id="pageTitle">Language MP3 Player</h1>
     <div class="row">
+      <select id="languageSelect" title="언어 선택">
+        <option value="fr" selected>프랑스어</option>
+        <option value="de">독일어</option>
+      </select>
       <input id="q" type="search" placeholder="검색 (제목)" />
       <select id="rate" title="재생 속도">
         <option value="0.75">0.75x</option>
@@ -50,7 +54,7 @@
       <button id="playSelected" type="button">선택 재생</button>
     </div>
     <div class="row" style="margin-top:10px">
-      <span class="muted">파일은 <b>audio/</b> 폴더에 넣고, 목록은 <b>audio/index.json</b>만 수정하면 됩니다.</span>
+      <span id="sourceHint" class="muted">파일은 <b>audio/</b> 폴더에 넣고, 목록은 <b>audio/index.json</b>만 수정하면 됩니다.</span>
     </div>
   </header>
 
@@ -61,18 +65,46 @@
   </main>
 
   <script>
-    const INDEX_URL = "audio/index.json";
+    const LANGUAGES = {
+      fr: {
+        label: "프랑스어",
+        title: "French MP3 Player",
+        emptyMessage: "프랑스어 오디오가 없습니다.",
+        sources: [
+          { indexUrl: "audio/index.json", basePath: "audio" },
+          { indexUrl: "audio/french/index.json", basePath: "audio/french" }
+        ]
+      },
+      de: {
+        label: "독일어",
+        title: "German MP3 Player",
+        emptyMessage: "독일어 오디오가 없습니다.",
+        sources: [
+          { indexUrl: "audio/german/index.json", basePath: "audio/german" },
+          { indexUrl: "audio/%EB%8F%85%EC%9D%BC%EC%96%B4/index.json", basePath: "audio/%EB%8F%85%EC%9D%BC%EC%96%B4" }
+        ]
+      }
+    };
+
     const listEl = document.getElementById("list");
     const statusEl = document.getElementById("status");
+    const pageTitleEl = document.getElementById("pageTitle");
+    const sourceHintEl = document.getElementById("sourceHint");
+    const languageSelectEl = document.getElementById("languageSelect");
     const qEl = document.getElementById("q");
     const rateEl = document.getElementById("rate");
     const playAllBtn = document.getElementById("playAll");
     const playSelectedBtn = document.getElementById("playSelected");
 
+    let currentLanguage = languageSelectEl.value;
+    let currentSource = LANGUAGES[currentLanguage].sources[0];
     let items = [];
     let audios = [];
     const queuePlayer = new Audio();
-    let selectedFiles = new Set();
+    const selectedFilesByLanguage = {
+      fr: new Set(),
+      de: new Set()
+    };
     let playAllMode = false;
     let playQueue = [];
     let playQueueIndex = 0;
@@ -94,6 +126,21 @@
       queuePlayer.currentTime = 0;
       // 일반 모드에서는 각 트랙 반복 재생 유지
       audios.forEach(a => { a.loop = true; });
+    }
+
+    function getSelectedFiles() {
+      return selectedFilesByLanguage[currentLanguage] || new Set();
+    }
+
+    function setLanguageUI() {
+      const language = LANGUAGES[currentLanguage];
+      pageTitleEl.textContent = language.title;
+      document.title = language.title;
+
+      const activeSource = currentSource || language.sources[0];
+      const basePathLabel = decodeURIComponent(activeSource.basePath || "audio");
+      const indexPathLabel = decodeURIComponent(activeSource.indexUrl || "audio/index.json");
+      sourceHintEl.innerHTML = `파일은 <b>${escapeHtml(basePathLabel)}/</b> 폴더에 넣고, 목록은 <b>${escapeHtml(indexPathLabel)}</b>만 수정하면 됩니다.`;
     }
 
     async function startQueuePlayback(queue) {
@@ -148,14 +195,22 @@
     function render() {
       const q = qEl.value.trim().toLowerCase();
       const filtered = items.filter(it => (it.title || "").toLowerCase().includes(q));
+      const selectedFiles = getSelectedFiles();
+      const language = LANGUAGES[currentLanguage];
 
-      statusEl.textContent = `총 ${items.length}개 · 표시 ${filtered.length}개`;
+      statusEl.textContent = `${language.label} 총 ${items.length}개 · 표시 ${filtered.length}개`;
+
+      if (!filtered.length && !items.length) {
+        listEl.innerHTML = `<div class="error">${escapeHtml(language.emptyMessage)}</div>`;
+        audios = [];
+        return;
+      }
 
       listEl.innerHTML = filtered.map((it, idx) => {
         const title = escapeHtml(it.title || `Track ${idx+1}`);
         const file = encodeURI(it.file || "");
         const rawFile = escapeHtml(it.file || "");
-        const src = `audio/${file}`;
+        const src = `${currentSource.basePath}/${file}`;
         const checked = selectedFiles.has(it.file || "") ? "checked" : "";
         return `
           <div class="card">
@@ -221,11 +276,34 @@
     });
 
     async function loadIndex() {
+      stopAll();
+      listEl.innerHTML = "";
+
+      const language = LANGUAGES[currentLanguage];
+      currentSource = language.sources[0];
+      setLanguageUI();
+
       try {
         statusEl.textContent = "목록 불러오는 중...";
-        const res = await fetch(INDEX_URL, { cache: "no-store" });
-        if (!res.ok) throw new Error(`index.json을 불러올 수 없습니다 (HTTP ${res.status})`);
-        const data = await res.json();
+        let data = null;
+        let lastError = null;
+
+        for (const source of language.sources) {
+          try {
+            const res = await fetch(source.indexUrl, { cache: "no-store" });
+            if (!res.ok) {
+              lastError = new Error(`${source.indexUrl}을 불러올 수 없습니다 (HTTP ${res.status})`);
+              continue;
+            }
+            data = await res.json();
+            currentSource = source;
+            break;
+          } catch (err) {
+            lastError = err;
+          }
+        }
+
+        if (!data) throw lastError || new Error("재생 목록을 불러올 수 없습니다.");
         if (!Array.isArray(data)) throw new Error("index.json 형식이 배열(JSON list)이어야 합니다.");
         items = data.filter(x => x && x.file);
         render();
@@ -235,7 +313,7 @@
             <div style="font-weight:700; margin-bottom:6px;">오류</div>
             <div>${escapeHtml(err.message)}</div>
             <div style="margin-top:10px;" class="muted">
-              확인: <b>audio/index.json</b> 파일 존재 여부, JSON 문법(쉼표/따옴표), 그리고 MP3 파일명이 정확한지
+              확인: <b>${escapeHtml(decodeURIComponent(language.sources[0].indexUrl))}</b> 파일 존재 여부, JSON 문법(쉼표/따옴표), 그리고 MP3 파일명이 정확한지
             </div>
           </div>
         `;
@@ -247,6 +325,12 @@
     rateEl.addEventListener("change", applyRateToAll);
     playAllBtn.addEventListener("click", playAllSequential);
     playSelectedBtn.addEventListener("click", playSelectedSequential);
+    languageSelectEl.addEventListener("change", () => {
+      currentLanguage = languageSelectEl.value;
+      qEl.value = "";
+      items = [];
+      loadIndex();
+    });
 
     loadIndex();
   </script>
