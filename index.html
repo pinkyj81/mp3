@@ -1,0 +1,412 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Language MP3 Player</title>
+  <style>
+    :root { --gap: 12px; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans KR", Arial, sans-serif;
+           margin: 0; background: #f7f7f8; color: #111; }
+    header { padding: 18px 16px; background: #fff; border-bottom: 1px solid #e6e6e6; position: sticky; top: 0; z-index: 10; }
+    h1 { font-size: 18px; margin: 0 0 8px; }
+    .row { display: flex; gap: var(--gap); flex-wrap: wrap; align-items: center; }
+    input[type="search"] { flex: 1 1 240px; padding: 10px 12px; border: 1px solid #d8d8d8; border-radius: 10px; }
+    select, button { padding: 10px 12px; border: 1px solid #d8d8d8; border-radius: 10px; background: #fff; }
+    main { max-width: 900px; margin: 0 auto; padding: 16px; }
+    .card { background: #fff; border: 1px solid #e6e6e6; border-radius: 14px; padding: 14px; margin-bottom: 12px; }
+    .track-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+    .track-select { display: inline-flex; align-items: center; gap: 6px; min-width: 52px; }
+    .track-check { width: 18px; height: 18px; accent-color: #2563eb; outline: 1px solid #9ca3af; border-radius: 3px; }
+    .track-select-label { font-size: 12px; color: #374151; }
+    .title { font-weight: 650; margin-bottom: 10px; }
+    audio { width: 100%; }
+    .meta { font-size: 12px; color: #555; margin-top: 8px; display: flex; justify-content: space-between; gap: var(--gap); flex-wrap: wrap; }
+    .pill { display:inline-block; padding: 2px 8px; border: 1px solid #e0e0e0; border-radius: 999px; background: #fafafa; }
+    .muted { color: #666; font-size: 13px; }
+    .error { color: #b00020; background: #fff; border: 1px solid #f0c2c2; padding: 12px; border-radius: 12px; }
+    .footer { text-align: center; padding: 18px 0 24px; color: #666; font-size: 12px; }
+
+    /* 모바일에서 sticky 헤더가 본문을 가리는 현상 방지 */
+    @media (max-width: 768px) {
+      header { position: static; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1 id="pageTitle">Language MP3 Player</h1>
+    <div class="row">
+      <select id="languageSelect" title="언어 선택">
+        <option value="fr">프랑스어</option>
+        <option value="fr2">프랑스어2</option>
+        <option value="de">독일어</option>
+        <option value="ja_n1">일본어 N1</option>
+        <option value="ja_n2">일본어 N2</option>
+        <option value="ja_n3">일본어 N3</option>
+      </select>
+      <input id="q" type="search" placeholder="검색 (제목)" />
+      <select id="rate" title="재생 속도">
+        <option value="0.75">0.75x</option>
+        <option value="0.9">0.9x</option>
+        <option value="1" selected>1.0x</option>
+        <option value="1.1">1.1x</option>
+        <option value="1.25">1.25x</option>
+        <option value="1.5">1.5x</option>
+      </select>
+      <button id="playAll" type="button">전체 재생</button>
+      <button id="playSelected" type="button">선택 재생</button>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <span id="sourceHint" class="muted">파일은 <b>audio/</b> 폴더에 넣고, 목록은 <b>audio/index.json</b>만 수정하면 됩니다.</span>
+    </div>
+  </header>
+
+  <main>
+    <div id="status" class="muted" style="margin: 6px 2px 14px;"></div>
+    <div id="list"></div>
+    <div class="footer">오프라인에서도 쓰려면 파일을 휴대폰에 저장하거나, 간단 호스팅에 올려서 접속하세요.</div>
+  </main>
+
+  <script>
+    const DEFAULT_GERMAN_TRACKS = [
+      "2-2", "3-1", "3-2", "4-1", "4-2", "5-1", "5-2", "6-1", "6-2",
+      "7-1", "7-2", "8-1", "8-2", "9-1", "9-2", "10-1", "10-2", "11-1",
+      "11-2", "12-1", "12-2", "13-1", "13-2", "14-1", "14-2", "15-1", "15-2",
+      "16-1", "16-2", "17-1", "17-2", "18-1", "18-2", "19-1", "19-2", "20-1", "20-2"
+    ].map(function (name) {
+      return { title: name, file: name + ".mp3" };
+    });
+
+    const DEFAULT_FRENCH2_TRACKS = [];
+    for (let i = 1; i <= 20; i += 1) {
+      DEFAULT_FRENCH2_TRACKS.push({ title: `${i}-1`, file: `${i}-1.mp3` });
+      DEFAULT_FRENCH2_TRACKS.push({ title: `${i}-2`, file: `${i}-2.mp3` });
+    }
+
+    const DEFAULT_JAPANESE_TRACKS = Array.from({ length: 30 }, (_, i) => {
+      const d = String(i + 1).padStart(2, "0");
+      return { title: `Track-Day${d}`, file: `Track-Day${d}.mp3` };
+    });
+
+    const DEFAULT_FRENCH_TRACKS = Array.from({ length: 20 }, (_, i) => {
+      const d = String(i + 1).padStart(2, "0");
+      return { title: `Lecon ${d}`, file: `Lecon ${d}.MP3` };
+    });
+
+    const LANGUAGES = {
+      fr: {
+        label: "프랑스어",
+        title: "French MP3 Player",
+        emptyMessage: "프랑스어 오디오가 없습니다.",
+        sources: [
+          { indexUrl: "audio/index.json", basePath: "audio" }
+        ],
+        defaultItems: DEFAULT_FRENCH_TRACKS
+      },
+      fr2: {
+        label: "프랑스어2",
+        title: "French 2 MP3 Player",
+        emptyMessage: "프랑스어2 오디오가 없습니다.",
+        sources: [
+          { indexUrl: "audio/french2/index.json", basePath: "audio/french2" }
+        ],
+        defaultItems: DEFAULT_FRENCH2_TRACKS
+      },
+      de: {
+        label: "독일어",
+        title: "German MP3 Player",
+        emptyMessage: "독일어 오디오가 없습니다.",
+        sources: [
+          { indexUrl: "audio/german/index.json", basePath: "audio/german" }
+        ],
+        defaultItems: DEFAULT_GERMAN_TRACKS
+      },
+      ja_n1: {
+        label: "일본어 N1",
+        title: "Japanese N1 MP3 Player",
+        emptyMessage: "일본어 N1 오디오가 없습니다.",
+        sources: [
+          { indexUrl: "audio/일본어 N1/index.json", basePath: "audio/일본어 N1" }
+        ],
+        defaultItems: DEFAULT_JAPANESE_TRACKS
+      },
+      ja_n2: {
+        label: "일본어 N2",
+        title: "Japanese N2 MP3 Player",
+        emptyMessage: "일본어 N2 오디오가 없습니다.",
+        sources: [
+          { indexUrl: "audio/일본어 N2/index.json", basePath: "audio/일본어 N2" }
+        ],
+        defaultItems: DEFAULT_JAPANESE_TRACKS
+      },
+      ja_n3: {
+        label: "일본어 N3",
+        title: "Japanese N3 MP3 Player",
+        emptyMessage: "일본어 N3 오디오가 없습니다.",
+        sources: [
+          { indexUrl: "audio/일본어 N3/index.json", basePath: "audio/일본어 N3" }
+        ],
+        defaultItems: DEFAULT_JAPANESE_TRACKS
+      }
+    };
+
+    const listEl = document.getElementById("list");
+    const statusEl = document.getElementById("status");
+    const pageTitleEl = document.getElementById("pageTitle");
+    const sourceHintEl = document.getElementById("sourceHint");
+    const languageSelectEl = document.getElementById("languageSelect");
+    const qEl = document.getElementById("q");
+    const rateEl = document.getElementById("rate");
+    const playAllBtn = document.getElementById("playAll");
+    const playSelectedBtn = document.getElementById("playSelected");
+
+    let currentLanguage = languageSelectEl.value;
+    let currentSource = LANGUAGES[currentLanguage].sources[0];
+    let items = [];
+    let audios = [];
+    const queuePlayer = new Audio();
+    const selectedFilesByLanguage = {
+      fr: new Set(),
+      fr2: new Set(),
+      de: new Set(),
+      ja_n1: new Set(),
+      ja_n2: new Set(),
+      ja_n3: new Set()
+    };
+    let playAllMode = false;
+    let playQueue = [];
+    let playQueueIndex = 0;
+
+    queuePlayer.preload = "auto";
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, m => ({
+        "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
+      }[m]));
+    }
+
+    function stopAll() {
+      playAllMode = false;
+      playQueue = [];
+      playQueueIndex = 0;
+      audios.forEach(a => { a.pause(); a.currentTime = 0; });
+      queuePlayer.pause();
+      queuePlayer.currentTime = 0;
+      // 일반 모드에서는 각 트랙 반복 재생 유지
+      audios.forEach(a => { a.loop = true; });
+    }
+
+    function getSelectedFiles() {
+      return selectedFilesByLanguage[currentLanguage] || new Set();
+    }
+
+    function setLanguageUI() {
+      const language = LANGUAGES[currentLanguage];
+      pageTitleEl.textContent = language.title;
+      document.title = language.title;
+
+      const activeSource = currentSource || language.sources[0];
+      const basePathLabel = decodeURIComponent(activeSource.basePath || "audio");
+      const indexPathLabel = decodeURIComponent(activeSource.indexUrl || "audio/index.json");
+      sourceHintEl.innerHTML = `파일은 <b>${escapeHtml(basePathLabel)}/</b> 폴더에 넣고, 목록은 <b>${escapeHtml(indexPathLabel)}</b>만 수정하면 됩니다.`;
+    }
+
+    async function startQueuePlayback(queue) {
+      if (!queue.length) return;
+
+      playQueue = queue;
+      playAllMode = true;
+      playQueueIndex = 0;
+
+      // 큐 재생 중에는 개별 loop를 꺼서 ended 이벤트로 다음 곡 진행
+      audios.forEach(a => {
+        a.loop = false;
+      });
+
+      // 기존 재생 정지 후 큐 첫 곡 재생
+      audios.forEach(a => { a.pause(); a.currentTime = 0; });
+      queuePlayer.pause();
+      queuePlayer.currentTime = 0;
+      queuePlayer.src = playQueue[0];
+
+      try {
+        await queuePlayer.play();
+      } catch (err) {
+        playAllMode = false;
+      }
+    }
+
+    async function playAllSequential() {
+      if (!audios.length) return;
+      await startQueuePlayback(audios.map(a => a.dataset.src));
+    }
+
+    async function playSelectedSequential() {
+      if (!audios.length) return;
+      const checkedFiles = new Set(
+        Array.from(document.querySelectorAll(".track-check:checked")).map(chk => chk.dataset.file)
+      );
+      const selectedQueue = audios.filter(a => checkedFiles.has(a.dataset.file)).map(a => a.dataset.src);
+      if (!selectedQueue.length) {
+        alert("재생할 레슨을 체크해주세요.");
+        return;
+      }
+      await startQueuePlayback(selectedQueue);
+    }
+
+    function applyRateToAll() {
+      const r = parseFloat(rateEl.value);
+      audios.forEach(a => { a.playbackRate = r; });
+      queuePlayer.playbackRate = r;
+    }
+
+    function render() {
+      const q = qEl.value.trim().toLowerCase();
+      const filtered = items.filter(it => (it.title || "").toLowerCase().includes(q));
+      const selectedFiles = getSelectedFiles();
+      const language = LANGUAGES[currentLanguage];
+
+      statusEl.textContent = `${language.label} 총 ${items.length}개 · 표시 ${filtered.length}개`;
+
+      if (!filtered.length && !items.length) {
+        listEl.innerHTML = `<div class="error">${escapeHtml(language.emptyMessage)}</div>`;
+        audios = [];
+        return;
+      }
+
+      listEl.innerHTML = filtered.map((it, idx) => {
+        const title = escapeHtml(it.title || `Track ${idx+1}`);
+        const file = encodeURI(it.file || "");
+        const rawFile = escapeHtml(it.file || "");
+        const src = encodeURI(`${currentSource.basePath}/${it.file || ""}`);
+        const checked = selectedFiles.has(it.file || "") ? "checked" : "";
+        return `
+          <div class="card">
+            <div class="track-head">
+              <label class="track-select">
+                <input class="track-check" type="checkbox" data-file="${rawFile}" ${checked}>
+                <span class="track-select-label">선택</span>
+              </label>
+              <div class="title" style="margin-bottom:0;">${title}</div>
+            </div>
+            <audio controls preload="none" loop data-idx="${idx}" data-file="${rawFile}" data-src="${src}">
+              <source src="${src}" type="audio/mpeg">
+              브라우저가 오디오를 지원하지 않습니다.
+            </audio>
+            <div class="meta">
+              <span class="pill">${escapeHtml(it.file || "")}</span>
+              <span class="muted">속도는 상단에서 변경</span>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      // 새로 그린 audio들을 다시 수집
+      audios = Array.from(document.querySelectorAll("audio"));
+      applyRateToAll();
+
+      // 체크 상태를 상태 저장소와 동기화
+      document.querySelectorAll(".track-check").forEach(chk => {
+        chk.addEventListener("change", () => {
+          const f = chk.dataset.file;
+          if (chk.checked) selectedFiles.add(f);
+          else selectedFiles.delete(f);
+        });
+      });
+
+      // 동시에 여러 개 재생되는 걸 막고 싶으면(선택): 하나 재생하면 나머지 정지
+      audios.forEach(a => {
+        a.addEventListener("play", () => {
+          // 카드 개별 재생을 시작하면 큐 재생은 중지
+          playAllMode = false;
+          queuePlayer.pause();
+          queuePlayer.currentTime = 0;
+          audios.forEach(other => { if (other !== a) other.pause(); });
+        });
+      });
+    }
+
+    queuePlayer.addEventListener("ended", async () => {
+      if (!playAllMode || !playQueue.length) return;
+
+      playQueueIndex += 1;
+      if (playQueueIndex >= playQueue.length) {
+        // 선택된 재생목록 안에서 계속 반복
+        playQueueIndex = 0;
+      }
+
+      try {
+        queuePlayer.src = playQueue[playQueueIndex];
+        await queuePlayer.play();
+      } catch (err) {
+        playAllMode = false;
+      }
+    });
+
+    async function loadIndex() {
+      stopAll();
+      listEl.innerHTML = "";
+
+      const language = LANGUAGES[currentLanguage];
+      currentSource = language.sources[0];
+      setLanguageUI();
+
+      try {
+        statusEl.textContent = "목록 불러오는 중...";
+        let data = null;
+        let lastError = null;
+
+        for (const source of language.sources) {
+          try {
+            const fetchUrl = encodeURI(source.indexUrl);
+            const res = await fetch(fetchUrl, { cache: "no-store" });
+            if (!res.ok) {
+              lastError = new Error(`${source.indexUrl}을 불러올 수 없습니다 (HTTP ${res.status})`);
+              continue;
+            }
+            data = await res.json();
+            currentSource = source;
+            break;
+          } catch (err) {
+            lastError = err;
+          }
+        }
+
+        if (!data && Array.isArray(language.defaultItems)) {
+          data = language.defaultItems;
+        }
+
+        if (!data) throw lastError || new Error("재생 목록을 불러올 수 없습니다.");
+        if (!Array.isArray(data)) throw new Error("index.json 형식이 배열(JSON list)이어야 합니다.");
+        items = data.filter(x => x && x.file);
+        render();
+      } catch (err) {
+        listEl.innerHTML = `
+          <div class="error">
+            <div style="font-weight:700; margin-bottom:6px;">오류</div>
+            <div>${escapeHtml(err.message)}</div>
+            <div style="margin-top:10px;" class="muted">
+              확인: <b>${escapeHtml(decodeURIComponent(language.sources[0].indexUrl))}</b> 파일 존재 여부, JSON 문법(쉼표/따옴표), 그리고 MP3 파일명이 정확한지
+            </div>
+          </div>
+        `;
+        statusEl.textContent = "";
+      }
+    }
+
+    qEl.addEventListener("input", render);
+    rateEl.addEventListener("change", applyRateToAll);
+    playAllBtn.addEventListener("click", playAllSequential);
+    playSelectedBtn.addEventListener("click", playSelectedSequential);
+    languageSelectEl.addEventListener("change", () => {
+      currentLanguage = languageSelectEl.value;
+      qEl.value = "";
+      items = [];
+      loadIndex();
+    });
+
+    loadIndex();
+  </script>
+</body>
+</html>
