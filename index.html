@@ -44,6 +44,7 @@
         <option value="ja_n1">일본어 N1</option>
         <option value="ja_n2">일본어 N2</option>
         <option value="ja_n3">일본어 N3</option>
+        <option value="materials">재료공학</option>
       </select>
       <input id="q" type="search" placeholder="검색 (제목)" />
       <select id="rate" title="재생 속도">
@@ -148,6 +149,15 @@
           { indexUrl: "audio/일본어 N3/index.json", basePath: "audio/일본어 N3" }
         ],
         defaultItems: DEFAULT_JAPANESE_TRACKS
+      },
+      materials: {
+        label: "재료공학",
+        title: "Materials Engineering MP3 Player",
+        emptyMessage: "재료공학 오디오가 없습니다.",
+        sources: [
+          { indexUrl: "audio/재료공학/index.json", basePath: "audio/재료공학" }
+        ],
+        defaultItems: []
       }
     };
 
@@ -172,7 +182,8 @@
       de: new Set(),
       ja_n1: new Set(),
       ja_n2: new Set(),
-      ja_n3: new Set()
+      ja_n3: new Set(),
+      materials: new Set()
     };
     let playAllMode = false;
     let playQueue = [];
