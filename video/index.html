@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Video Player</title>
+  <style>
+    :root { --gap: 12px; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans KR", Arial, sans-serif;
+           margin: 0; background: #f7f7f8; color: #111; }
+    header { padding: 18px 16px; background: #fff; border-bottom: 1px solid #e6e6e6; position: sticky; top: 0; z-index: 10; }
+    h1 { font-size: 18px; margin: 0 0 8px; }
+    .row { display: flex; gap: var(--gap); flex-wrap: wrap; align-items: center; }
+    input[type="search"] { flex: 1 1 240px; padding: 10px 12px; border: 1px solid #d8d8d8; border-radius: 10px; }
+    select { padding: 10px 12px; border: 1px solid #d8d8d8; border-radius: 10px; background: #fff; }
+    a { color: #2563eb; text-decoration: none; }
+    main { max-width: 1000px; margin: 0 auto; padding: 16px; }
+    .card { background: #fff; border: 1px solid #e6e6e6; border-radius: 14px; padding: 14px; margin-bottom: 12px; }
+    .title { font-weight: 650; margin-bottom: 10px; }
+    video { width: 100%; max-height: 70vh; border-radius: 10px; background: #000; }
+    .meta { font-size: 12px; color: #555; margin-top: 8px; }
+    .muted { color: #666; font-size: 13px; }
+    .error { color: #b00020; background: #fff; border: 1px solid #f0c2c2; padding: 12px; border-radius: 12px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Video Player</h1>
+    <div class="row">
+      <a href="../index.html">오디오 플레이어로 이동</a>
+      <input id="q" type="search" placeholder="검색 (제목)" />
+      <select id="rate" title="재생 속도">
+        <option value="0.75">0.75x</option>
+        <option value="1" selected>1.0x</option>
+        <option value="1.25">1.25x</option>
+        <option value="1.5">1.5x</option>
+      </select>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <span class="muted">동영상 파일은 <b>video/files/</b> 폴더에 넣고, 목록은 <b>video/index.json</b>을 수정하세요.</span>
+    </div>
+  </header>
+
+  <main>
+    <div id="status" class="muted" style="margin: 6px 2px 14px;"></div>
+    <div id="list"></div>
+  </main>
+
+  <script>
+    const listEl = document.getElementById("list");
+    const statusEl = document.getElementById("status");
+    const qEl = document.getElementById("q");
+    const rateEl = document.getElementById("rate");
+    let items = [];
+    let videos = [];
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, m => ({
+        "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
+      }[m]));
+    }
+
+    function applyRateToAll() {
+      const r = parseFloat(rateEl.value || "1");
+      videos.forEach(v => { v.playbackRate = r; });
+    }
+
+    function render() {
+      const q = (qEl.value || "").trim().toLowerCase();
+      const filtered = items.filter(x => !q || String(x.title || "").toLowerCase().includes(q));
+
+      statusEl.textContent = `동영상 총 ${items.length}개 · 표시 ${filtered.length}개`;
+
+      if (!filtered.length) {
+        listEl.innerHTML = `<div class="card muted">표시할 동영상이 없습니다.</div>`;
+        videos = [];
+        return;
+      }
+
+      listEl.innerHTML = filtered.map((x, i) => {
+        const src = `files/${encodeURIComponent(x.file)}`;
+        return `
+          <div class="card">
+            <div class="title">${escapeHtml(x.title || x.file || `Video ${i + 1}`)}</div>
+            <video controls preload="metadata" data-src="${src}">
+              <source src="${src}" />
+              브라우저가 video 태그를 지원하지 않습니다.
+            </video>
+            <div class="meta">${escapeHtml(x.file || "")}</div>
+          </div>
+        `;
+      }).join("");
+
+      videos = Array.from(document.querySelectorAll("video"));
+      applyRateToAll();
+    }
+
+    async function loadIndex() {
+      try {
+        statusEl.textContent = "목록 불러오는 중...";
+        const res = await fetch("index.json", { cache: "no-store" });
+        if (!res.ok) throw new Error(`video/index.json을 불러올 수 없습니다 (HTTP ${res.status})`);
+        const data = await res.json();
+        if (!Array.isArray(data)) throw new Error("video/index.json 형식이 배열(JSON list)이어야 합니다.");
+        items = data.filter(x => x && x.file);
+        render();
+      } catch (err) {
+        listEl.innerHTML = `<div class="error">${escapeHtml(err.message)}</div>`;
+        statusEl.textContent = "";
+      }
+    }
+
+    qEl.addEventListener("input", render);
+    rateEl.addEventListener("change", applyRateToAll);
+    loadIndex();
+  </script>
+</body>
+</html>
